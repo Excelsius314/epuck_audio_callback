@@ -16,7 +16,7 @@ class AudioCallBack(Node):
     def __init__(self):
         super().__init__('epuck_audio_callback')
         
-        self.robot_ids = ["rob_0", "rob_1", "rob_2"]
+        self.robot_ids = ["epuck"] #  , "rob_1", "rob_2"]
         self.num_microphones = 4
         self.microphone_buffers = {id:{k:[] for k in range(self.num_microphones)} for id in self.robot_ids}
         self.microphone_data_subscribers = [[self.create_subscription(Float32, 
@@ -28,12 +28,15 @@ class AudioCallBack(Node):
         self.record = False
 
         self.timer = None
+
+        self.average_over_robot = True
         
     def activation_callback(self, msg):
 
         print("Activating recording of data")
 
-        self.clear_buffers() 
+        self.clear_buffers()
+        self.average_over_robot = msg.average_over_robot
         self.record = True
         self.timer = self.create_timer(msg.recording_time, self.record_done_callback)
     
@@ -68,18 +71,24 @@ class AudioCallBack(Node):
                 robot_audio_data[i].append(mic_data)
                 min_len = min(min_len, len(mic_data))
         
-        print(robot_audio_data)
         robot_audio_data = np.array(robot_audio_data[:][:][ :min_len])
+        print("Recorded Data:")
         print(robot_audio_data)
-        return np.average(robot_audio_data, axis=1)
+
+        avg_axis = (1, 2) if self.average_over_robot else 2
+        averaged_result = np.average(robot_audio_data, axis=avg_axis)
+
+        print("Averaged Result {}; average over robot: {}".format(averaged_result, self.average_over_robot))
+        return averaged_result
 
     def record_done_callback(self):
 
         print("Recording done")
         self.record = False
+        self.timer.cancel()
         self.timer.destroy()
         result_msg = RecordResult()
-        result_msg.averaged_audio_levels = self.get_formated_data_from_buffer()
+        result_msg.averaged_audio_levels = list(self.get_formated_data_from_buffer().flatten())
         self.record_finisher_publisher.publish(result_msg)
 
 
